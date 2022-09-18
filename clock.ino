@@ -5,6 +5,8 @@
   #include <avr/power.h>
 #endif
 
+#include <Audio.h>
+
 #define NUMPIXELS 24
 #define PIXEL_PIN 6
 #define DEFAULT_BRIGHTNESS 50
@@ -14,9 +16,17 @@
 // at 7am, start scaling brightness back up
 // at 8am, brightness shold be full again
 #define NIGHT_BRIGHTNESS_START 22 // 11pm
-#define NIGHT_BRIGHTNESS_END 7 // 7am
+#define NIGHT_BRIGHTNESS_END 8 // 8am
 
 Adafruit_NeoPixel pixels = Adafruit_NeoPixel(NUMPIXELS, PIXEL_PIN, NEO_GRB + NEO_KHZ800);
+
+AudioPlayMemory chime;
+AudioOutputAnalog dac1;
+AudioConnection patchCord1(chime, dac1);
+
+bool chimeEnabled = true;
+bool chimeOnHour = true;
+uint8_t maxBrightness = DEFAULT_BRIGHTNESS;
 
 void printTime(Stream *s) {
   s->print(hour());
@@ -33,18 +43,19 @@ void printTime(Stream *s) {
   s->println(); 
 }
 
-void updateNightBrightness() {
-  uint8_t h = hour();
+void updateNightBrightness(uint8_t h) {
+  chimeOnHour = false;
   uint8_t brightness;
   if (h == NIGHT_BRIGHTNESS_START) {
     // start scaling down
-    brightness = (uint8_t) (((float) (60 - minute()) / 60.0) * (256.0 - MIN_BRIGHTNESS) + MIN_BRIGHTNESS);
+    brightness = (uint8_t) (((float) (60 - minute()) / 60.0) * (maxBrightness - MIN_BRIGHTNESS) + MIN_BRIGHTNESS);
   } else if (h == NIGHT_BRIGHTNESS_END) {
     // start scaling up
-    brightness = (uint8_t) (((float) minute() / 60.0) * (256.0 - MIN_BRIGHTNESS) + MIN_BRIGHTNESS);
+    brightness = (uint8_t) (((float) minute() / 60.0) * (maxBrightness - MIN_BRIGHTNESS) + MIN_BRIGHTNESS);
   } else if (h > NIGHT_BRIGHTNESS_END && h < NIGHT_BRIGHTNESS_START) {
     // daytime brightness
     brightness = DEFAULT_BRIGHTNESS;
+    chimeOnHour = true; // enable chiming if during the day
   } else {
     // nighttime brightness
     brightness = MIN_BRIGHTNESS;
@@ -65,10 +76,10 @@ void processMessage(Stream *s) {
     }
   } else if(s->peek() == 'B') {
     s->read();
-    uint8_t brightness = s->parseInt();
-    pixels.setBrightness(brightness);
+    maxBrightness = s->parseInt();
+    updateNightBrightness(hour());
     s->print("Set brightness: ");
-    s->println(brightness);
+    s->println(maxBrightness);
   } else {
     while (s->available()) {
       s->read();
@@ -148,6 +159,10 @@ void setup() {
   } else {
     Serial.println("RTC has set the system time");
   }
+
+  AudioMemory(16);
+
+  chime.play(AudioSampleHarp);
 }
 
 // TODO: timer to make pleasant pwm buzzer sound
@@ -162,13 +177,21 @@ void loop() {
 //  i++;
 //  delay(1);
 
-  uint32_t m = millis();
+  uint32_t start = millis();
   if (Serial.available()) {
     processMessage(&Serial);
   }
-  updateNightBrightness();
-  displayTime(hour(), minute(), second());
-  uint32_t runtime = millis();
-  if (runtime > m) // catch wrap-around
-    delay(2500 - (runtime - m));
+  uint8_t h = hour();
+  uint8_t m = minute();
+  uint8_t s = second();
+  displayTime(h, m, s);
+  updateNightBrightness(h);
+  if (m == 0 && h == 0) {
+    if (chimeEnabled && chimeOnHour) {
+//      chime.play(AudioSampleHarp);
+    }
+  }
+  uint32_t end = millis();
+  if (end > start) // catch wrap-around
+    delay(2500 - (end - start));
 }
