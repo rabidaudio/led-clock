@@ -7,23 +7,75 @@
 
 #define NUMPIXELS 24
 #define PIXEL_PIN 6
-#define TIME_HEADER  "T"   // Header tag for serial time sync message
 #define DEFAULT_BRIGHTNESS 50
+#define MIN_BRIGHTNESS 16
+// at 10pm, start scaling brightness down
+// at 11pm, brightness should be minimum
+// at 7am, start scaling brightness back up
+// at 8am, brightness shold be full again
+#define NIGHT_BRIGHTNESS_START 22 // 11pm
+#define NIGHT_BRIGHTNESS_END 7 // 7am
 
 Adafruit_NeoPixel pixels = Adafruit_NeoPixel(NUMPIXELS, PIXEL_PIN, NEO_GRB + NEO_KHZ800);
 
-time_t processSyncMessage() {
-  time_t pctime = 0L;
-  const time_t DEFAULT_TIME = 1357041600; // Jan 1 2013 
+void printTime(Stream *s) {
+  s->print(hour());
+  s->print(":");
+  s->print(minute());
+  s->print(":");
+  s->print(second());
+  s->print(" ");
+  s->print(day());
+  s->print(" ");
+  s->print(month());
+  s->print(" ");
+  s->print(year()); 
+  s->println(); 
+}
 
-  if(Serial.find(TIME_HEADER)) {
-     pctime = Serial.parseInt();
-     return pctime;
-     if(pctime < DEFAULT_TIME) {
-       pctime = 0L;
-     }
+void updateNightBrightness() {
+  uint8_t h = hour();
+  uint8_t brightness;
+  if (h == NIGHT_BRIGHTNESS_START) {
+    // start scaling down
+    brightness = (uint8_t) (((float) (60 - minute()) / 60.0) * (256.0 - MIN_BRIGHTNESS) + MIN_BRIGHTNESS);
+  } else if (h == NIGHT_BRIGHTNESS_END) {
+    // start scaling up
+    brightness = (uint8_t) (((float) minute() / 60.0) * (256.0 - MIN_BRIGHTNESS) + MIN_BRIGHTNESS);
+  } else if (h > NIGHT_BRIGHTNESS_END && h < NIGHT_BRIGHTNESS_START) {
+    // daytime brightness
+    brightness = DEFAULT_BRIGHTNESS;
+  } else {
+    // nighttime brightness
+    brightness = MIN_BRIGHTNESS;
   }
-  return pctime;
+  pixels.setBrightness(brightness);
+}
+
+void processMessage(Stream *s) {
+  if(s->peek() == 'T') {
+    s->read();
+    const time_t DEFAULT_TIME = 1357041600; // Jan 1 2013 
+    time_t pctime = s->parseInt();
+    if(pctime >= DEFAULT_TIME) {
+      Teensy3Clock.set(pctime);
+      setTime(pctime);
+      s->print("Set time: ");
+      printTime(s);
+    }
+  } else if(s->peek() == 'B') {
+    s->read();
+    uint8_t brightness = s->parseInt();
+    pixels.setBrightness(brightness);
+    s->print("Set brightness: ");
+    s->println(brightness);
+  } else {
+    while (s->available()) {
+      s->read();
+    }
+    s->println("?");
+    printTime(s);
+  }
 }
 
 time_t getTeensy3Time() {
@@ -102,14 +154,21 @@ void setup() {
 // TODO: bluetooth serial module, set time, brightness, alarms
 // TODO: fade between?
 
-void loop() {  
-//  if (Serial.available()) {
-//    time_t t = processSyncMessage();
-//    if (t != 0) {
-//      Teensy3Clock.set(t); // set the RTC
-//      setTime(t);
-//    }
-//  }
+void loop() {
+//  uint8_t s = i % 60;
+//  uint8_t m = (i / 60) % 60;
+//  uint8_t h = (i / 60 / 60) % 24;
+//  displayTime(h, m, s);
+//  i++;
+//  delay(1);
+
+  uint32_t m = millis();
+  if (Serial.available()) {
+    processMessage(&Serial);
+  }
+  updateNightBrightness();
   displayTime(hour(), minute(), second());
-  delay(2500);
+  uint32_t runtime = millis();
+  if (runtime > m) // catch wrap-around
+    delay(2500 - (runtime - m));
 }
