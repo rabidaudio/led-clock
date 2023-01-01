@@ -6,6 +6,7 @@
 #endif
 
 #include <Audio.h>
+#include <SD.h>
 
 #define NUMPIXELS 24
 #define PIXEL_PIN 6
@@ -20,9 +21,9 @@
 
 Adafruit_NeoPixel pixels = Adafruit_NeoPixel(NUMPIXELS, PIXEL_PIN, NEO_GRB + NEO_KHZ800);
 
-AudioPlayMemory chime;
+AudioPlaySdWav wav;
 AudioOutputAnalog dac1;
-AudioConnection patchCord1(chime, dac1);
+AudioConnection patchCord1(wav, 0, dac1, 0);
 
 bool chimeEnabled = true;
 bool chimeOnHour = true;
@@ -160,9 +161,26 @@ void setup() {
     Serial.println("RTC has set the system time");
   }
 
+  if (!SD.begin(10)) {
+    Serial.println("SD initialization failed!");
+    errorState();
+  }
+
   AudioMemory(16);
 
-  chime.play(AudioSampleHarp);
+  while(true) {
+    Serial.println("playing");
+    if (!wav.play("HARP.WAV")) {
+      Serial.println("error!");
+      errorState();
+    }
+
+    delay(1000);
+
+    while (wav.isPlaying()){
+      delay(1000);
+    }
+  }
 }
 
 // TODO: timer to make pleasant pwm buzzer sound
