@@ -166,26 +166,20 @@ void setup() {
     errorState();
   }
 
+  dac1.analogReference(EXTERNAL);
   AudioMemory(16);
-
-  while(true) {
-    Serial.println("playing");
-    if (!wav.play("HARP.WAV")) {
-      Serial.println("error!");
-      errorState();
-    }
-
-    delay(1000);
-
-    while (wav.isPlaying()){
-      delay(1000);
-    }
-  }
 }
 
 // TODO: timer to make pleasant pwm buzzer sound
 // TODO: bluetooth serial module, set time, brightness, alarms
 // TODO: fade between?
+
+void chime() {
+  if (!wav.play("HARP.WAV")) {
+    Serial.println("error!");
+    errorState();
+  }
+}
 
 void loop() {
 //  uint8_t s = i % 60;
@@ -204,9 +198,9 @@ void loop() {
   uint8_t s = second();
   displayTime(h, m, s);
   updateNightBrightness(h);
-  if (m == 0 && h == 0) {
+  if (m == 0 && s == 0) {
     if (chimeEnabled && chimeOnHour) {
-//      chime.play(AudioSampleHarp);
+      chime();
     }
   }
   uint32_t end = millis();
