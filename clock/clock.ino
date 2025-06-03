@@ -5,9 +5,6 @@
   #include <avr/power.h>
 #endif
 
-#include <Audio.h>
-#include <SD.h>
-
 #define NUMPIXELS 24
 #define PIXEL_PIN 6
 #define DEFAULT_BRIGHTNESS 50
@@ -21,13 +18,28 @@
 
 Adafruit_NeoPixel pixels = Adafruit_NeoPixel(NUMPIXELS, PIXEL_PIN, NEO_GRB + NEO_KHZ800);
 
-AudioPlaySdWav wav;
-AudioOutputAnalog dac1;
-AudioConnection patchCord1(wav, 0, dac1, 0);
-
-bool chimeEnabled = true;
-bool chimeOnHour = true;
 uint8_t maxBrightness = DEFAULT_BRIGHTNESS;
+
+class Color {
+  public:
+    uint8_t red;
+    uint8_t green;
+    uint8_t blue;
+
+    Color(uint64_t hex) {
+      red   = (hex >> 16) & 0xFF;
+      green = (hex >>  8) & 0xFF;
+      blue  = (hex >>  0) & 0xFF;
+    }
+
+    Color scale(float brightness) {
+      Color c = Color(0);
+      c.red = red * brightness;
+      c.green = green * brightness;
+      c.blue = blue * brightness;
+      return c;
+    }
+};
 
 void printTime(Stream *s) {
   s->print(hour());
@@ -45,7 +57,7 @@ void printTime(Stream *s) {
 }
 
 void updateNightBrightness(uint8_t h) {
-  chimeOnHour = false;
+  // chimeOnHour = false;
   uint8_t brightness;
   if (h == NIGHT_BRIGHTNESS_START) {
     // start scaling down
@@ -56,7 +68,7 @@ void updateNightBrightness(uint8_t h) {
   } else if (h > NIGHT_BRIGHTNESS_END && h < NIGHT_BRIGHTNESS_START) {
     // daytime brightness
     brightness = DEFAULT_BRIGHTNESS;
-    chimeOnHour = true; // enable chiming if during the day
+    // chimeOnHour = true; // enable chiming if during the day
   } else {
     // nighttime brightness
     brightness = MIN_BRIGHTNESS;
@@ -95,41 +107,42 @@ time_t getTeensy3Time() {
 }
 
 
+
 void displayTime(uint8_t h, uint8_t m, uint8_t s) {
   pixels.clear();
  
   // this method blends colors between two pixels. I don't like it as much
-//  float ss = (float) s / 60.0;
-//  float mm = ((float) m + ss) / 60.0 * 24.0;
-//  m = (uint8_t) floor(mm);
-//  mm -= floor(mm);
-//  uint8_t mv = (uint8_t) (255.0 * mm);
-//  pixels.setPixelColor(m, 0, 255 - mv, 0);
-//  pixels.setPixelColor(m == 23 ? 0 : m+1, 0, mv, 0);
-//  s = (uint8_t) (ss * 24.0);
-//  ss = ss * 24.0;
-//  s = (uint8_t) floor(ss);
-//  ss -= floor(ss);
-//  uint8_t sv = (uint8_t) (255.0 * ss);
-//  pixels.setPixelColor(s, 255 - sv, 0, 0);
-//  pixels.setPixelColor(s == 23 ? 0 : s+1, sv, 0, 0);
-
   float ss = (float) s / 60.0;
-  float mm = ((float) m + ss) / 60.0;
-  float hh = (((float) (h % 12) + mm) / 12.0) * NUMPIXELS;
-  h = (uint8_t) floor(hh);
-  mm = mm * NUMPIXELS;
+  float mm = ((float) m + ss) / 60.0 * 24.0;
   m = (uint8_t) floor(mm);
-  ss = ss * NUMPIXELS;
+  mm -= floor(mm);
+  uint8_t mv = (uint8_t) (255.0 * mm);
+  pixels.setPixelColor(m, 0, 255 - mv, 0);
+  pixels.setPixelColor(m == 23 ? 0 : m+1, 0, mv, 0);
+  s = (uint8_t) (ss * 24.0);
+  ss = ss * 24.0;
   s = (uint8_t) floor(ss);
+  ss -= floor(ss);
+  uint8_t sv = (uint8_t) (255.0 * ss);
+  pixels.setPixelColor(s, 255 - sv, 0, 0);
+  pixels.setPixelColor(s == 23 ? 0 : s+1, sv, 0, 0);
 
-  if (h == m && m == s) {
-    pixels.setPixelColor(h, 255, 255, 255);
-  } else {
-    pixels.setPixelColor(h, 0, 0, 255);
-    pixels.setPixelColor(m, pixels.getPixelColor(m) | pixels.Color(0, 255, 0));
-    pixels.setPixelColor(s, pixels.getPixelColor(s) | pixels.Color(255, 0, 0));
-  }
+//  float ss = (float) s / 60.0;
+//  float mm = ((float) m + ss) / 60.0;
+//  float hh = (((float) (h % 12) + mm) / 12.0) * NUMPIXELS;
+//  h = (uint8_t) floor(hh);
+//  mm = mm * NUMPIXELS;
+//  m = (uint8_t) floor(mm);
+//  ss = ss * NUMPIXELS;
+//  s = (uint8_t) floor(ss);
+//
+//  if (h == m && m == s) {
+//    pixels.setPixelColor(h, 255, 255, 255);
+//  } else {
+//    pixels.setPixelColor(h, 0, 0, 255);
+//    pixels.setPixelColor(m, pixels.getPixelColor(m) | pixels.Color(0, 255, 0));
+//    pixels.setPixelColor(s, pixels.getPixelColor(s) | pixels.Color(255, 0, 0));
+//  }
   pixels.show();
 }
 
@@ -160,26 +173,11 @@ void setup() {
   } else {
     Serial.println("RTC has set the system time");
   }
-
-  if (!SD.begin(10)) {
-    Serial.println("SD initialization failed!");
-    errorState();
-  }
-
-  dac1.analogReference(EXTERNAL);
-  AudioMemory(16);
 }
 
 // TODO: timer to make pleasant pwm buzzer sound
 // TODO: bluetooth serial module, set time, brightness, alarms
 // TODO: fade between?
-
-void chime() {
-  if (!wav.play("HARP.WAV")) {
-    Serial.println("error!");
-    errorState();
-  }
-}
 
 void loop() {
 //  uint8_t s = i % 60;
@@ -198,11 +196,11 @@ void loop() {
   uint8_t s = second();
   displayTime(h, m, s);
   updateNightBrightness(h);
-  if (m == 0 && s == 0) {
-    if (chimeEnabled && chimeOnHour) {
-      chime();
-    }
-  }
+//  if (m == 0 && s == 0) {
+//    if (chimeEnabled && chimeOnHour) {
+//      chime();
+//    }
+//  }
   uint32_t end = millis();
   if (end > start) // catch wrap-around
     delay(2500 - (end - start));
