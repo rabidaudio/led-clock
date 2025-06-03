@@ -15,6 +15,12 @@ class Color {
     uint8_t green;
     uint8_t blue;
 
+    Color() {
+      red = 0;
+      green = 0;
+      blue = 0;
+    }
+
     Color(uint64_t hex) {
       red   = (hex >> 16) & 0xFF;
       green = (hex >>  8) & 0xFF;
@@ -28,29 +34,80 @@ class Color {
       c.blue = blue * brightness;
       return c;
     }
+
+    // NOTE: will overflow
+    Color plus(Color color) {
+      Color c = Color(0);
+      c.red = red + color.red;
+      c.green = green + color.green;
+      c.blue = blue + color.blue;
+      return c;
+    }
+
+    uint64_t hex() {
+      return (red << 16) | (green << 8) | (blue << 0);
+    }
 };
 
-// angle 0-1, fullBrightness 0-1
-void displayTime2(float angle, Color color, float fullBrightness, size_t spred) {
-  size_t currentPixel = (size_t) floor(angle * NUMPIXELS);
-//  size_t nextPixel = (currentPixel + 1) % NUMPIXELS;
-  size_t prevPixel = currentPixel == 0 ? (NUMPIXELS - 1) : (currentPixel - 1);
-  Color reduced = color.scale(fullBrightness);
+class CircularPixels {
+  private:
+    uint64_t _colors[NUMPIXELS];
+    float _maxBrightness = 1.0;
+    float _spread = 1;
+    float _scale = 0.4;
 
-  // scale again by the angle
-  float v = ((angle * NUMPIXELS) - (float) currentPixel) / spred;
-  Color prevColor = reduced.scale(0.5 - v);
-  Color currentColor = reduced.scale(0.25 + v);
-  Color nextColor = reduced.scale(v);
+    // TODO: improve performance?
+    float gaussianDistribution(float x, float mean, float variance) {
+      return 1.0 / sqrt(2.0*M_PI*variance) * pow(M_E, -1.0*(x-mean)*(x-mean)/(2.0*variance));
+    }
+    
+  public:
 
-  pixels.setPixelColor(prevPixel, 0, 0, 0);
-  for (size_t p = 0; p < (size_t) spred; p++) {
-    pixels.setPixelColor(prevPixel, prevColor.red, prevColor.green, prevColor.blue);  
-  }
-  
-  pixels.setPixelColor(currentPixel, currentColor.red, currentColor.green, currentColor.blue);
-  pixels.setPixelColor(nextPixel, nextColor.red, nextColor.green, nextColor.blue);
-}
+    void setSpread(float spread) {
+      _spread = spread;
+      _scale = 1 / gaussianDistribution(0, 0, _spread); // scale the distribution so the peak is 1.0
+    }
+    
+    void setMaxBrightness(float b) {
+      _maxBrightness = b;
+    }
+    
+    void clear() {
+      for (size_t i = 0; i < NUMPIXELS; i++) {
+        _colors[i] = 0;
+      }
+    }
+
+    // angle: float [0-1) of % of circle to center color
+    void setColor(float angle, Color color) {
+      for (size_t i = 0; i < NUMPIXELS; i++) {
+        float x = (float) i / NUMPIXELS;
+        Color current = Color(_colors[i]);
+        float normValue =
+          // 3 times handles wraps
+          (
+            gaussianDistribution(x, angle, _spread) +
+            gaussianDistribution(x-1.0, angle, _spread) +
+            gaussianDistribution(x+1.0, angle, _spread)
+          )* _scale;
+
+        _colors[i] = current.plus(color.scale(normValue)).hex();
+      }
+    }
+
+    void display() {
+      Color pixel;
+      pixels.clear();
+      for (size_t i = 0; i < NUMPIXELS; i++) {
+        pixel = Color(_colors[i]);
+        pixel.scale(_maxBrightness);
+        pixels.setPixelColor(i, pixel.red, pixel.green, pixel.blue);
+      }
+      pixels.show();
+    }
+};
+
+CircularPixels cir;
 
 void setup() {
   pixels.begin();
@@ -58,23 +115,22 @@ void setup() {
   pixels.clear();
   pixels.show();
   Serial.begin(115200);
+
+  cir.setSpread(pow(0.0225, 2)); // determined imperically
+  cir.setMaxBrightness(255);
 }
 
-Color foo = Color(0xff0000);
+Color red = Color(0xff0000);
+Color blue = Color(0x00ff00);
+Color green = Color(0x0000ff);
 
 void loop() {
-  for (size_t i = 0; i < 255; i++) {
-    displayTime2((float) i / 255, foo, 240.0/255);
-    pixels.show();
+  for (uint16_t i = 0; i < 50000; i += 100) {
+    cir.clear();
+    cir.setColor((float)(i/100)/50000.0, red);
+    cir.setColor((float)i/50000.0, green);
+    cir.setColor(0.5, blue);
+    cir.display();
     delay(100);
   }
-//  for (size_t j = 0; j < NUMPIXELS; j++) {
-//    for (size_t i = 0; i < 255; i++) {
-//      pixels.setPixelColor(j, 255 - i, 0, 0);
-//      pixels.setPixelColor((j + 1) % NUMPIXELS, i, 0, 0);
-//      pixels.show();
-//      delay(10);
-//    }
-//    pixels.setPixelColor(j, 0, 0, 0);
-//  }
 }

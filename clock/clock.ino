@@ -48,11 +48,11 @@ void printTime(Stream *s) {
   s->print(":");
   s->print(second());
   s->print(" ");
-  s->print(day());
-  s->print(" ");
+  s->print(year());
+  s->print("-");
   s->print(month());
-  s->print(" ");
-  s->print(year()); 
+  s->print("-");
+  s->print(day());
   s->println(); 
 }
 
@@ -77,7 +77,10 @@ void updateNightBrightness(uint8_t h) {
 }
 
 void processMessage(Stream *s) {
-  if(s->peek() == 'T') {
+  if(s->peek() == 'G') { // get time
+    s->read();
+    printTime(s);
+  } else if(s->peek() == 'T') { // set time
     s->read();
     const time_t DEFAULT_TIME = 1357041600; // Jan 1 2013 
     time_t pctime = s->parseInt();
@@ -87,7 +90,7 @@ void processMessage(Stream *s) {
       s->print("Set time: ");
       printTime(s);
     }
-  } else if(s->peek() == 'B') {
+  } else if(s->peek() == 'B') { // set brightness
     s->read();
     maxBrightness = s->parseInt();
     updateNightBrightness(hour());
@@ -147,12 +150,14 @@ void displayTime(uint8_t h, uint8_t m, uint8_t s) {
 }
 
 void errorState() {
-  pinMode(13, OUTPUT);
+  pixels.clear();
   while (true) {
-    digitalWrite(13, HIGH);
-    delay(100);
-    digitalWrite(13, LOW);
-    delay(100); 
+    pixels.setPixelColor(0, 255, 0, 0);
+    pixels.show();
+    delay(1000);
+    pixels.setPixelColor(0, 0, 0, 0);
+    pixels.show();
+    delay(1000);
   }
 }
 
