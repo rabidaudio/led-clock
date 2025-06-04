@@ -1,6 +1,6 @@
 import serial
 import argparse
-import time
+import pendulum
 
 parser = argparse.ArgumentParser(
                     prog='ledclkctrl',
@@ -13,7 +13,8 @@ parser.add_argument('-d', '--device', default='/dev/tty.usbmodem10832401')
 args = parser.parse_args()
 
 if args.set == None:
-    args.set = round(time.time())
+    now = pendulum.now()
+    args.set = round(now.int_timestamp + now.utcoffset().total_seconds())
 
 with serial.Serial(args.device) as ser:
     if args.set != -1:
